@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Chatter Test</title>
+    <style>
+        body { font-family: sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; }
+        #messages { list-style: none; padding: 0; border: 1px solid #ccc; height: 300px; overflow-y: auto; }
+        #messages li { padding: .4rem .6rem; border-bottom: 1px solid #eee; }
+        #messages time { color: #888; font-size: .8em; margin-right: .4rem; }
+        form { display: flex; gap: .5rem; margin-top: .5rem; }
+        #content { flex: 1; }
+        #status { font-size: .9em; color: #888; }
+    </style>
+</head>
+<body>
+    <h1>Chatter</h1>
+    <p id="status">Connecting...</p>
+    <input id="userName" placeholder="Your name" value="tester" />
+    <ul id="messages"></ul>
+    <form id="sendForm">
+        <input id="content" placeholder="Type a message" autocomplete="off" />
+        <button type="submit" id="sendButton" disabled>Send</button>
+    </form>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/microsoft-signalr/8.0.7/signalr.min.js"></script>
+    <script>
+        const status = document.getElementById("status");
+        const messages = document.getElementById("messages");
+        const sendButton = document.getElementById("sendButton");
+        const contentInput = document.getElementById("content");
+
+        const connection = new signalR.HubConnectionBuilder()
+            .withUrl("/hubs/chat")
+            .withAutomaticReconnect()
+            .build();
+
+        connection.on("ReceiveMessage", (msg) => {
+            const li = document.createElement("li");
+            const time = document.createElement("time");
+            time.textContent = new Date(msg.sentAt).toLocaleTimeString();
+            const name = document.createElement("strong");
+            name.textContent = msg.userName + ": ";
+            li.append(time, name, document.createTextNode(msg.content));
+            messages.appendChild(li);
+            messages.scrollTop = messages.scrollHeight;
+        });
+
+        connection.onreconnecting(() => { status.textContent = "Reconnecting..."; sendButton.disabled = true; });
+        connection.onreconnected(() => { status.textContent = "Connected"; sendButton.disabled = false; });
+        connection.onclose(() => { status.textContent = "Disconnected"; sendButton.disabled = true; });
+
+        connection.start()
+            .then(() => { status.textContent = "Connected"; sendButton.disabled = false; })
+            .catch(err => { status.textContent = "Connection failed: " + err; });
+
+        document.getElementById("sendForm").addEventListener("submit", async (e) => {
+            e.preventDefault();
+            const content = contentInput.value.trim();
+            if (!content) return;
+            const userName = document.getElementById("userName").value.trim() || "anonymous";
+            try {
+                await connection.invoke("SendMessage", userName, content);
+                contentInput.value = "";
+            } catch (err) {
+                status.textContent = "Send failed: " + err;
+            }
+        });
+    </script>
+</body>
+</html>

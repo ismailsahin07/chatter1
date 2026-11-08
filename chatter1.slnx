@@ -1,0 +1,7 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="Chatter.API/Chatter.API.csproj" />
+    <Project Path="Chatter.Client/Chatter.Client.csproj" Id="f1964bb7-124d-49ff-8b2f-1ad2016703f6" />
+    <Project Path="Chatter.Core/Chatter.Core.csproj" />
+  </Folder>
+</Solution>

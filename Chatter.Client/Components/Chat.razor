@@ -1,0 +1,87 @@
+﻿@page "/chat"
+@rendermode @(new InteractiveServerRenderMode(prerender: false))
+@using Microsoft.AspNetCore.SignalR.Client
+@using Chatter.Core
+@using Chatter.Core.Interfaces
+@inject NavigationManager Navigation
+@implements IAsyncDisposable
+
+<PageTitle>Chat</PageTitle>
+
+<div class="row mb-2">
+    <label class="col-sm-1 col-form-label">User</label>
+    <div class="col-sm-4">
+        <input class="form-control" @bind="userName" @bind:event="oninput" />
+    </div>
+</div>
+
+<div class="row mb-2">
+    <label class="col-sm-1 col-form-label">Message</label>
+    <div class="col-sm-6">
+        <input class="form-control" @bind="draft" @bind:event="oninput" />
+    </div>
+</div>
+
+<button class="btn btn-primary" @onclick="Send" disabled="@(!IsConnected)">Send</button>
+
+@if (error is not null)
+{
+    <div class="alert alert-danger">@error</div>
+}
+
+<hr>
+
+<ul>
+    @foreach (var message in messages)
+    {
+        <li><b>@message.User</b> (@message.SentAt.LocalDateTime.ToShortTimeString()): @message.Payload</li>
+    }
+</ul>
+
+@code {
+    private HubConnection? hubConnection;
+    private readonly List<MessageDto> messages = new();
+    private string userName = string.Empty;
+    private string draft = string.Empty;
+
+    private bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
+
+    protected override async Task OnInitializedAsync()
+    {
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/chathub"))
+            .WithAutomaticReconnect()
+            .Build();
+
+        hubConnection.On<MessageDto>(nameof(IChatClient.ReceiveMessage), msg =>
+        {
+            messages.Add(msg);
+            InvokeAsync(StateHasChanged);
+        });
+
+        await hubConnection.StartAsync();
+    }
+
+    private string? error;
+
+    private async Task Send()
+    {
+        if (hubConnection is null || string.IsNullOrWhiteSpace(draft)) return;
+        try
+        {
+            await hubConnection.SendAsync("SendMessage", draft, userName);
+            draft = string.Empty;
+            error = null;
+        }
+        catch(Exception ex)
+        {
+            error = ex.Message;
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+            await hubConnection.DisposeAsync();
+    }
+}
