@@ -3,7 +3,9 @@
 @using Microsoft.AspNetCore.SignalR.Client
 @using Chatter.Core
 @using Chatter.Core.Interfaces
-@inject NavigationManager Navigation
+@using Microsoft.Extensions.Logging
+@inject ILogger<Chat> _logger
+@inject IConfiguration config
 @implements IAsyncDisposable
 
 <PageTitle>Chat</PageTitle>
@@ -24,15 +26,20 @@
 
 <button class="btn btn-primary" @onclick="Send" disabled="@(!IsConnected)">Send</button>
 
-@if (error is not null)
+@if (statusMessage is not null)
 {
-    <div class="alert alert-danger">@error</div>
+    <div class="alert alert-warning">@statusMessage</div>
+}
+
+@if (errorMessage is not null)
+{
+    <div class="alert alert-danger">@errorMessage</div>
 }
 
 <hr>
 
 <ul>
-    @foreach (var message in messages)
+    @foreach (var message in _messages)
     {
         <li><b>@message.User</b> (@message.SentAt.LocalDateTime.ToShortTimeString()): @message.Payload</li>
     }
@@ -40,29 +47,71 @@
 
 @code {
     private HubConnection? hubConnection;
-    private readonly List<MessageDto> messages = new();
+    private readonly List<MessageDto> _messages = new();
     private string userName = string.Empty;
     private string draft = string.Empty;
+    private string? errorMessage;
+    private string? statusMessage;
 
     private bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
 
     protected override async Task OnInitializedAsync()
     {
         hubConnection = new HubConnectionBuilder()
-            .WithUrl(Navigation.ToAbsoluteUri("/chathub"))
+            .WithUrl((config["HubConnectionUrl"])
+                ?? throw new InvalidOperationException("HubConnectionUrl is missing from appsettings.json in the Client project"))
             .WithAutomaticReconnect()
             .Build();
 
         hubConnection.On<MessageDto>(nameof(IChatClient.ReceiveMessage), msg =>
         {
-            messages.Add(msg);
-            InvokeAsync(StateHasChanged);
+            InvokeAsync(() => { _messages.Add(msg); StateHasChanged(); });
         });
 
-        await hubConnection.StartAsync();
+        hubConnection?.Closed += async ex =>
+        {
+            _logger.LogWarning($"Hub connection has lost: {ex?.Message}");
+            errorMessage = "Connection has closed.";
+            await InvokeAsync(StateHasChanged);
+        };
+
+        errorMessage = null;
+
+        hubConnection?.Reconnecting += async ex =>
+        {
+            _logger.LogWarning($"Reconnecting to the hub: {ex?.Message}");
+            statusMessage = "Reconnecting...";
+            await InvokeAsync(StateHasChanged);
+        };
+
+        statusMessage = null;
+
+        hubConnection?.Reconnected += async connectionId =>
+        {
+            _logger.LogInformation($"Reconnected to the hub with ID: {connectionId}");
+            statusMessage = "Connected.";
+            await InvokeAsync(StateHasChanged);
+        };
+
+        statusMessage = null;
+
+        await ConnectAsync();
     }
 
-    private string? error;
+    private async Task ConnectAsync()
+    {
+        errorMessage = null;
+
+        try
+        {
+            await hubConnection!.StartAsync();
+        }
+        catch (Exception ex)
+        {
+            _logger.LogError($"Hub connection initiation failed: {ex.Message}");
+            errorMessage = "Connection has failed.";
+        }
+    }
 
     private async Task Send()
     {
@@ -71,11 +120,11 @@
         {
             await hubConnection.SendAsync("SendMessage", draft, userName);
             draft = string.Empty;
-            error = null;
+            errorMessage = null;
         }
         catch(Exception ex)
         {
-            error = ex.Message;
+            errorMessage = ex.Message;
         }
     }
 
