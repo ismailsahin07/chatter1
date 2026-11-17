@@ -1,0 +1,87 @@
+# Chatter CI pipeline (Azure Pipelines, source code on GitHub)
+#
+# - Every push to main and every pull request into main: restore, build,
+#   test, and publish the API and Client as pipeline artifacts.
+# - Pushes to main only: mirror main into the Azure Repos repo named in
+#   `mirrorRepoName` (one-way, GitHub -> Azure Repos).
+
+trigger:
+  branches:
+    include:
+      - main
+
+pr:
+  branches:
+    include:
+      - main
+
+variables:
+  buildConfiguration: Release
+  dotnetSdkVersion: 10.0.x
+  solution: chatter1.slnx
+  mirrorRepoName: chatter1   # Azure Repos repo in this same project
+
+stages:
+  - stage: Build
+    displayName: Build and test
+    jobs:
+      - job: Build
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - task: UseDotNet@2
+            displayName: Install .NET SDK $(dotnetSdkVersion)
+            inputs:
+              packageType: sdk
+              version: $(dotnetSdkVersion)
+
+          - script: dotnet restore $(solution)
+            displayName: Restore
+
+          - script: dotnet build $(solution) -c $(buildConfiguration) --no-restore
+            displayName: Build
+
+          # Runs every test project in the solution (none yet, so this passes).
+          - script: dotnet test $(solution) -c $(buildConfiguration) --no-build
+            displayName: Test
+
+          - script: |
+              dotnet publish Chatter.API/Chatter.API.csproj -c $(buildConfiguration) --no-build -o $(Build.ArtifactStagingDirectory)/api
+              dotnet publish Chatter.Client/Chatter.Client.csproj -c $(buildConfiguration) --no-build -o $(Build.ArtifactStagingDirectory)/client
+            displayName: Publish API and Client
+
+          - task: PublishPipelineArtifact@1
+            displayName: Upload API artifact
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/api
+              artifact: api
+
+          - task: PublishPipelineArtifact@1
+            displayName: Upload Client artifact
+            inputs:
+              targetPath: $(Build.ArtifactStagingDirectory)/client
+              artifact: client
+
+  - stage: Mirror
+    displayName: Mirror main to Azure Repos
+    dependsOn: Build
+    # Only after a successful build of main itself, never for pull requests.
+    condition: and(succeeded(), eq(variables['Build.SourceBranch'], 'refs/heads/main'), ne(variables['Build.Reason'], 'PullRequest'))
+    jobs:
+      - job: Mirror
+        pool:
+          vmImage: ubuntu-latest
+        steps:
+          - checkout: self
+            fetchDepth: 0          # full history; a shallow clone can't be pushed to a new repo
+            persistCredentials: false
+
+          - script: |
+              set -euo pipefail
+              target="$(System.CollectionUri)$(System.TeamProject)/_git/$(mirrorRepoName)"
+              target="${target// /%20}"   # project names may contain spaces
+              git -c http.extraheader="AUTHORIZATION: bearer ${SYSTEM_ACCESSTOKEN}" \
+                push --force "$target" HEAD:refs/heads/main
+            displayName: Push main to Azure Repos
+            env:
+              SYSTEM_ACCESSTOKEN: $(System.AccessToken)
