@@ -65,7 +65,7 @@
 
         hubConnection.On<MessageDto>(nameof(IChatClient.ReceiveMessage), msg =>
         {
-            InvokeAsync(() => { _messages.Add(msg); StateHasChanged(); });
+            InvokeAsync(() => { if (_messages.Exists(m => m.Id == msg.Id)) return; _messages.Add(msg); StateHasChanged(); });
         });
 
         hubConnection?.Closed += async ex =>
@@ -90,6 +90,7 @@
         {
             _logger.LogInformation($"Reconnected to the hub with ID: {connectionId}");
             statusMessage = "Connected.";
+            await LoadHistoryAsync();
             await InvokeAsync(StateHasChanged);
         };
 
@@ -105,6 +106,7 @@
         try
         {
             await hubConnection!.StartAsync();
+            await LoadHistoryAsync();
         }
         catch (Exception ex)
         {
@@ -126,6 +128,26 @@
         {
             errorMessage = ex.Message;
         }
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (hubConnection is null) return;
+
+        List<MessageDto> messages = await hubConnection!.InvokeAsync<List<MessageDto>>("GetRecentMessages");
+        await InvokeAsync(() => 
+        { 
+            foreach (MessageDto msg in messages)
+            {
+                if (_messages.Exists(m => m.Id == msg.Id))
+                    continue;
+                _messages.Add(msg);
+                
+            }
+            _messages.Sort((a, b) => a.SentAt.CompareTo(b.SentAt));
+            StateHasChanged();
+        });
+        
     }
 
     public async ValueTask DisposeAsync()
