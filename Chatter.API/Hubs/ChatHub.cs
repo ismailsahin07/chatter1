@@ -8,18 +8,19 @@ namespace Chatter.API.Hubs
     {
         public async Task SendMessage(string message, string userName)
         {
+            if (string.IsNullOrWhiteSpace(message)) return;
+
+            message = message.Trim();
+
+            if (message.Length > 1000)
+                message = message.Remove(1000, message.Length - 1000);
+
             var dto = new MessageDto(
-                userName,
+                string.IsNullOrWhiteSpace(userName) ? "anonymous" : userName, 
                 message,
                 DateTimeOffset.UtcNow);
 
             await Clients.All.ReceiveMessage(dto);
-        }
-
-        public override async Task OnConnectedAsync()
-        {
-            await Clients.Others.UserJoined(Context.UserIdentifier ?? "Anonymous");
-            await base.OnConnectedAsync();
         }
     }
 }

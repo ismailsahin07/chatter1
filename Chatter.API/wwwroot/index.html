@@ -32,7 +32,7 @@
         const contentInput = document.getElementById("content");
 
         const connection = new signalR.HubConnectionBuilder()
-            .withUrl("/hubs/chat")
+            .withUrl("/chat")
             .withAutomaticReconnect()
             .build();
 
@@ -41,8 +41,8 @@
             const time = document.createElement("time");
             time.textContent = new Date(msg.sentAt).toLocaleTimeString();
             const name = document.createElement("strong");
-            name.textContent = msg.userName + ": ";
-            li.append(time, name, document.createTextNode(msg.content));
+            name.textContent = msg.user + ": ";
+            li.append(time, name, document.createTextNode(msg.payload));
             messages.appendChild(li);
             messages.scrollTop = messages.scrollHeight;
         });
@@ -61,7 +61,7 @@
             if (!content) return;
             const userName = document.getElementById("userName").value.trim() || "anonymous";
             try {
-                await connection.invoke("SendMessage", userName, content);
+                await connection.invoke("SendMessage", content, userName);
                 contentInput.value = "";
             } catch (err) {
                 status.textContent = "Send failed: " + err;
