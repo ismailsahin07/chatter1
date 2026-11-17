@@ -6,25 +6,19 @@
 @using Microsoft.Extensions.Logging
 @inject ILogger<Chat> _logger
 @inject IConfiguration config
+@inject IJSRuntime JS
 @implements IAsyncDisposable
 
 <PageTitle>Chat</PageTitle>
 
-<div class="row mb-2">
-    <label class="col-sm-1 col-form-label">User</label>
-    <div class="col-sm-4">
-        <input class="form-control" @bind="userName" @bind:event="oninput" />
-    </div>
-</div>
+<input class="form-control mb-2 chat-name" placeholder="Your name" aria-label="Your name"
+       maxlength="50" @bind="userName" @bind:event="oninput" />
 
-<div class="row mb-2">
-    <label class="col-sm-1 col-form-label">Message</label>
-    <div class="col-sm-6">
-        <input class="form-control" @bind="draft" @bind:event="oninput" />
-    </div>
-</div>
-
-<button class="btn btn-primary" @onclick="Send" disabled="@(!IsConnected)">Send</button>
+<form class="input-group mb-2" @onsubmit="Send">
+    <input class="form-control" placeholder="Type a message" aria-label="Message"
+           maxlength="1000" autocomplete="off" @bind="draft" @bind:event="oninput" />
+    <button type="submit" class="btn btn-primary" disabled="@(!IsConnected)">Send</button>
+</form>
 
 @if (statusMessage is not null)
 {
@@ -38,12 +32,17 @@
 
 <hr>
 
-<ul>
-    @foreach (var message in _messages)
-    {
-        <li><b>@message.User</b> (@message.SentAt.LocalDateTime.ToShortTimeString()): @message.Payload</li>
-    }
-</ul>
+<div class="chat-messages" @ref="messagesBox" style="height:60vh;overflow-y:auto;overflow-x:hidden;border:ridge;padding-left:0">
+    <ul style="list-style:none">
+        @foreach (var message in _messages)
+        {
+            <li style="overflow-wrap:anywhere;white-space:pre-wrap">
+                <b>@message.User</b> (@message.SentAt.LocalDateTime.ToShortTimeString()): @message.Payload
+            </li>
+        }
+    </ul>
+</div>
+
 
 @code {
     private HubConnection? hubConnection;
@@ -52,6 +51,10 @@
     private string draft = string.Empty;
     private string? errorMessage;
     private string? statusMessage;
+
+    private ElementReference messagesBox;
+    private Task<IJSObjectReference>? scrollModule;
+    private int scrolledMessageCount;
 
     private bool IsConnected => hubConnection?.State == HubConnectionState.Connected;
 
@@ -150,9 +153,41 @@
         
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        // Only scroll when the number of messages changed, not on every
+        // render (typing in the inputs also re-renders the component).
+        if (_messages.Count == scrolledMessageCount) return;
+        scrolledMessageCount = _messages.Count;
+
+        try
+        {
+            scrollModule ??= JS.InvokeAsync<IJSObjectReference>("import", "./Components/Chat.razor.js").AsTask();
+            var module = await scrollModule;
+            await module.InvokeVoidAsync("scrollToBottom", messagesBox);
+        }
+        catch (JSDisconnectedException)
+        {
+            // The browser tab is gone; nothing to scroll.
+        }
+    }
+
     public async ValueTask DisposeAsync()
     {
         if (hubConnection is not null)
             await hubConnection.DisposeAsync();
+
+        if (scrollModule is not null)
+        {
+            try
+            {
+                var module = await scrollModule;
+                await module.DisposeAsync();
+            }
+            catch (JSDisconnectedException)
+            {
+                // Circuit already closed; the browser cleaned up the module.
+            }
+        }
     }
 }

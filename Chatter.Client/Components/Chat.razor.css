@@ -1,0 +1,4 @@
+﻿/* Keep the name box from stretching across the whole page. */
+.chat-name {
+    max-width: 20rem;
+}
