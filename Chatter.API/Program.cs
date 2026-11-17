@@ -1,4 +1,6 @@
 ﻿using Chatter.API.Hubs;
+using Chatter.API;
+using Chatter.Core.Interfaces;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -7,6 +9,8 @@ builder.Services.AddControllers();
 builder.Services.AddOpenApi();
 
 builder.Services.AddSignalR();
+
+builder.Services.AddSingleton<IMessageStore, InMemoryMessageStore>();
 
 var app = builder.Build();
 

@@ -1,3 +1,3 @@
 ﻿namespace Chatter.Core;
 
-public record MessageDto(string User, string Payload, DateTimeOffset SentAt);
+public record MessageDto(string User, Guid Id, string Payload, DateTimeOffset SentAt);

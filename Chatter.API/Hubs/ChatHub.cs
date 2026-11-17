@@ -4,7 +4,7 @@ using Microsoft.AspNetCore.SignalR;
 
 namespace Chatter.API.Hubs
 {
-    public class ChatHub : Hub<IChatClient>
+    public class ChatHub(IMessageStore store) : Hub<IChatClient>
     {
         public async Task SendMessage(string message, string userName)
         {
@@ -17,10 +17,18 @@ namespace Chatter.API.Hubs
 
             var dto = new MessageDto(
                 string.IsNullOrWhiteSpace(userName) ? "anonymous" : userName, 
+                Guid.NewGuid(),
                 message,
                 DateTimeOffset.UtcNow);
 
+            await store.AddMessageAsync(dto);
+
             await Clients.All.ReceiveMessage(dto);
         }
+
+        public IReadOnlyList<MessageDto> GetRecentMessages()
+        {
+            return store.GetRecent();
+        }  
     }
 }
