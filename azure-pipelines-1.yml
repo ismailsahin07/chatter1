@@ -1,0 +1,12 @@
+trigger: 
+
+- main
+      
+stages:
+  - stage: anan
+    jobs:
+      - job: anan
+        steps:
+          - script: 
+              echo Hello World!
+
